@@ -1,0 +1,283 @@
+---
+title: "BellaBeat Analysis"
+author: "Adam Stacey"
+date: "7/19/2021"
+output: html_document
+---
+
+
+## Getting Started
+
+We've been tasked by BellaBeat to identify current smart device trends.  We'll use
+these insights to identify strategies BellaBeat can incorporate to increase their
+market share.  We've been provided a public dataset to work with.
+
+We have 31 days worth of data for 33 Fitbit users.  This data has been made 
+public and is available on [kaggle](https://www.kaggle.com/arashnic/fitbit).  
+33 users isn't a lot, it would be better if the sample size was larger.  However, 
+the data produced by these smart devices is *quite* extensive.
+
+The data is broken down into several tables.  The first tables are of a manageable 
+size and could be analyzed in a spreadsheet program.  However, the other tables 
+are very long as they contain per hour, per minute, and per second data.  So I'll 
+use R as my main tool for this analysis.  
+
+I'll start with loading the all powerful tidyverse.  I'll load lubridate too for
+help with dates.
+  
+```{r, message = FALSE}
+library(tidyverse)
+library(lubridate)
+```
+  
+Let's load the tables that track daily activity into tibbles.
+  
+```{r}
+daily_activity_tibble <- as_tibble(read.csv('../input/fitbit/Fitabase Data 4.12.16-5.12.16/dailyActivity_merged.csv'))
+glimpse(daily_activity_tibble)
+
+```
+
+This table shows up to 31 days of activity for the 33 Fitbit users.  It includes
+total steps, distance, calories burned, along with distance/minutes in different 
+cardiovascular zones (sedentary, light, moderate, and very active).
+
+I'll load the total daily sleep table into a tibble too.
+
+```{r}
+daily_sleep_tibble <- as_tibble(read.csv('../input/fitbit/Fitabase Data 4.12.16-5.12.16/sleepDay_merged.csv'))
+glimpse(daily_sleep_tibble)
+```
+
+This table shows the total minutes asleep, total minutes in bed and the number of
+sleep events for each user daily.
+
+The last daily table is a weight log.  PROCESSING...  
+
+```{r}
+daily_weightlog_tibble <- as_tibble(read.csv('../input/fitbit/Fitabase Data 4.12.16-5.12.16/weightLogInfo_merged.csv'))
+glimpse(daily_weightlog_tibble)
+```
+
+This short table shows a users weight and BMI on a daily basis.  Most values are 
+entered manually.  
+
+
+### Cleaning
+
+Let's remove any duplicate rows.
+
+```{r}
+daily_activity_tibble <- daily_activity_tibble %>% distinct()
+daily_sleep_tibble <- daily_sleep_tibble %>% distinct()
+daily_weightlog_tibble <- daily_weightlog_tibble %>% distinct()
+```
+
+Let's add columns to express the 'minutes asleep' and 'minutes in bed' columns 
+in hours since we usually think of our sleep time in hours. 
+
+```{r}
+daily_sleep_tibble <- daily_sleep_tibble %>% 
+  mutate(TotalHoursAsleep = TotalMinutesAsleep / 60,
+         TotalHoursInBed = TotalTimeInBed / 60)
+glimpse(daily_sleep_tibble)
+```
+
+## Daily Activity Insights
+
+One interesting thing Id like to find out is: how many days during the month did 
+each of these users wear their smart device?
+
+```{r}
+days_used <- daily_activity_tibble %>% count(Id)
+days_used %>% 
+  ggplot(aes(x = as.factor(Id), y = n)) +
+  geom_col(fill = 'grey', color = 'black', width = 0.5) +
+  labs(title = 'Number of Days Used', subtitle = '04/12/16 through 05/12/16',
+       x = 'Users', y = 'Number of Days') +
+  theme(axis.text.x = element_blank())
+```
+
+### Analysis
+
+As you can see, most users did use their device for 30 or 31 days total.  However,
+you can see that some used their device significantly less.  Why is this?  More
+data would be needed for a definitive answer, but perhaps after charging the device,
+some users simply forgot to put it back on for a day or more.  Some users may only
+wear their device on days they work out.  Or they may have multiple devices that
+they rotate through.
+
+## Sleep Tracking Insights
+
+Let's ask the same for daily sleep activity:  how many nights during the month 
+did each of these users wear their smart device?
+
+```{r}
+nights_used <- daily_sleep_tibble %>% count(Id)
+nights_used %>% 
+  ggplot(aes(x = as.factor(Id), y = n)) +
+  geom_col(fill = 'grey', color = 'black', width = 0.5) +
+  labs(title = 'Number of Nights Used', subtitle = '04/12/16 through 05/12/16',
+       x = 'Users', y = 'Number of Days') +
+  theme(axis.text.x = element_blank())
+```
+
+Here we see a wildly different trend than in our tracking of daytime use.  12 of 
+the users did use their device to track sleep for most or all of the time.  12 
+users had significantly less use at night, with most being below 10 nights in the 
+month.  And please note that 9 users didn't use the device at night at all, so 
+they do not even appear on the chart.
+
+Another interesting question to ask is:  how long total do users stay in bed 
+versus their actual sleep time?  We'll take the average for each user and display
+it in a bar chart.
+
+```{r}
+daily_sleep_tibble <- daily_sleep_tibble %>% 
+  mutate(Extra_Time_Bed = TotalTimeInBed - TotalMinutesAsleep) %>% 
+  group_by(Id) %>% 
+  summarize(mean = mean(Extra_Time_Bed))
+
+ggplot(data = daily_sleep_tibble) +
+  geom_col(mapping = aes(x = as.factor(Id), y = mean), fill = 'grey', 
+                         color = 'black', width = 0.5) +
+  labs(title = 'Extra Time Spent in Bed', subtitle = 'Average', x = 'Users',
+       y = 'Extra Time in Bed (Minutes)') +
+  theme(axis.text.x = element_blank(), legend.position = 'none') +
+  scale_y_continuous(breaks=seq(0,350,50))
+```
+
+As you can see, most users spend less than 50 extra minutes in bed on average.  
+It is unknown to me if this includes time before falling asleep.  Presumably the 
+device measure heart rate to determine that a user is still at rest in bed but no
+longer asleep.  Two users spent significantly more time in bed on average.  Were 
+they sick?
+
+### Analysis
+
+Many users are not using their device at night regularly if at all.  Again, a 
+probable cause is that they charge it at night.  Or perhaps they find the device 
+uncomfortable while sleeping.  Maybe many don't consider their sleep data to be 
+very important.  A survey would be helpful in determining the cause.  
+
+## Weight Log Insights
+
+There are only 67 entries in this table compared to a possible total of 1,023
+(if all 33 users entered a value all 31 days).  Most entries are done manually, 
+presumably meaning the user measured themselves on a scale and put the value in 
+the app.  A few were not, probably meaning they used a smart scale that is also
+connected to the app.  There are only two entries for fat (percentage of body 
+fat I believe).
+
+### Analysis
+
+People aren't using this feature much.  There could be many causes for this.  It
+could well just be psychological.  I personally don't think I would want to 
+measure my weight every day.  It could also be a matter of being too much work.  
+Most probably don't have an integrated smart scale, and so weighing yourself and 
+manually entering it in the app each day may seem tedious.  As for the fat column, 
+how is it being measured?  More than just weight and height must be involved or
+the column should always be automatically filled out.  Survey data would be 
+helpful to find out why people don't use this feature much. 
+
+## Deeper dive
+
+There is plenty of data left.  What should we look at?  I'm curious about METs.
+I didn't know what they were but looked it up.  MET stands for metabolic 
+equivalent. 1 MET is your resting metabolic rate. An activity that is 4 METs 
+requires your body to consume 4 times the oxygen you would when at rest. That 
+activity obviously requires more energy and leads to more calories burned.   
+
+I'll load the MET table into a tibble and clear any duplicate entries.  We also
+need to cast the ActivityMinute field as a date instead of a string.
+
+```{r}
+minute_MET_tibble <- as_tibble(read.csv('../input/fitbit/Fitabase Data 4.12.16-5.12.16/minuteMETsNarrow_merged.csv'))
+minute_MET_tibble <- minute_MET_tibble %>% distinct()
+glimpse(minute_MET_tibble)
+
+minute_MET_tibble$ActivityMinute <-mdy_hms(minute_MET_tibble$ActivityMinute) 
+glimpse(minute_MET_tibble)
+```
+
+You may have noticed in the glimpse that the METs are very high.  I'd expect to
+see a lot of 1s, especially at night but in fact, in all 1.3 million rows there 
+are only a handful of values below 10. And  there are a couple of thousand rows 
+with values over 100. To me, all the values seem to be 10 times what they should 
+be.  I haven't been able to find an answer as to why this is.
+
+Let's pick a user and see how their MET's fluctuate over the course of a couple 
+hours.
+
+```{r}
+filtered_minute_MET_tibble <- minute_MET_tibble %>% 
+  filter(Id == 5553957443 & ActivityMinute >= '2016-04-15 15:00:00' & 
+           ActivityMinute < '2016-04-15 17:00:00')
+
+ggplot(data = filtered_minute_MET_tibble) +
+  geom_line(mapping = aes(x = ActivityMinute, y = METs)) +
+  labs(title = 'MET Fluctuation', subtitle = "Between 3 and 5 PM", x = 'Minute') +
+  scale_y_continuous(breaks=seq(0,45,15))
+```
+
+You can see the fluctuation.  Interesting, but not particularly useful in temrs 
+of smart device trends.
+
+I'm going to pull up the hourly step table now:
+
+```{r}
+hourly_step_tibble <- as_tibble(read.csv('../input/fitbit/Fitabase Data 4.12.16-5.12.16/hourlySteps_merged.csv'))
+hourly_step_tibble <- hourly_step_tibble %>% distinct()
+hourly_step_tibble$ActivityHour <-mdy_hms(hourly_step_tibble$ActivityHour) 
+glimpse(hourly_step_tibble)
+```
+
+I also cleared duplicate entries and cast the ActivityHour column as a date 
+instead of a string.  Now let's find the most active hour for each user.
+
+```{r}
+most_step_hour <- hourly_step_tibble %>% 
+  group_by(Id) %>% 
+  filter(StepTotal == max(StepTotal)) 
+
+most_step_hour$ActivityHour <- hour(most_step_hour$ActivityHour)
+
+glimpse(most_step_hour)
+
+ggplot(data = most_step_hour) +
+  geom_bar(mapping = aes(x = ActivityHour), fill = 'gray', color = 'black') +
+  scale_x_continuous(breaks=seq(0,23,1)) +
+  labs(title = 'Hour with the Highest Steps', x = 'Hour, military')
+
+```
+
+As you can see, the hour with the most steps is 9 AM for five users.  8 AM has 
+the second most with 4 users.  Most likely as people get up and ready for work, 
+they end up walking a lot.  
+
+## Conclusions
+
+My goal was to identify trends for smart device users.  The sample size I had to 
+work with is small but the amount of data generated is staggering.  I don't think
+most of it will help identify trends that lead to actionable insights, but 
+there are some things worth sharing.  
+
+As we saw earlier, most people do use their device everyday or almost everyday.
+Some use their device less.  My hypothesis is that people forget to put the watch
+back on after charging it.  As more and more people return to the office, it 
+becomes more likely that once a person forgets to put the device on, it will 
+remain off for the whole day.  Survey data would be needed to confirm but if 
+correct, a longer battery life would probably result in people using their device 
+more.  The more they use it, the more dependent on it they become, making them
+come back for the newer, better model when it is released!
+
+When it comes to night-time use, people tend to use their device much less 
+frequently.  Probable causes are that the device is charging at night, or is 
+uncomfortable.  Longer battery life could increase their use.  A smaller device
+may make it more comfortable to wear at night.  But also, just more education
+regarding sleep and how important it is and how it affects your health may 
+prompt users to use their device at night. This could take the form of short, 
+informative pop-ups when people open our app.  
+
+
+
